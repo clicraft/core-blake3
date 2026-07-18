@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-18
+
+### Changed
+
+- Corrected the SMT characterization for `new_physical()` after
+  statistically rigorous, cache-artifact-free measurement (distinct random
+  DRAM-fed buffers; 15 interleaved trials + t-test, reproduced across 3
+  runs). The v0.3.0 claim that the second SMT thread "adds essentially
+  nothing" came from a cache-hot benchmark and was wrong. Corrected result:
+  the SMT effect is small but **statistically significant and
+  contention-dependent** — about **+2.5% on the P-cores alone** (in-memory)
+  and about **−2.5% across the whole 14-physical-core machine** (memory-
+  bandwidth-bound). Consequently `new_physical()` is documented as a
+  smaller-footprint knob (~2–3% slower than `new()`), not a throughput win;
+  `new()` remains the throughput default. Docs only — no API change.
+
 ## [0.3.0] - 2026-07-18
 
 ### Added
@@ -79,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI: build/clippy/test on `ubuntu-latest` and `windows-latest`, plus a
   Linux-side cross-target typecheck of the Windows module.
 
-[Unreleased]: https://github.com/clicraft/pcore-blake3/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/clicraft/pcore-blake3/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/clicraft/pcore-blake3/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/clicraft/pcore-blake3/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/clicraft/pcore-blake3/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/clicraft/pcore-blake3/releases/tag/v0.1.0

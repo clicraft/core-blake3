@@ -47,22 +47,32 @@ The reason to pin to P-cores isn't a big per-thread win — it's that
 GiB/s) without slow E-cores dragging down a shared work-stealing pool as
 stragglers.
 
-### Threads vs cores: SMT is (almost) free of benefit here
+### Threads vs cores: SMT is a small, contention-dependent effect
 
-BLAKE3 saturates a core's AVX2 (SIMD) units from a *single* thread, so the
-second SMT/Hyper-Threading thread on a P-core adds essentially nothing.
-Measured on the reference i9 (per physical core, in-memory):
+BLAKE3 leans hard on a core's AVX2 (SIMD) units, so the second
+SMT/Hyper-Threading thread on a P-core has little idle capacity to exploit
+— but "little" is not "none." Measured rigorously on the reference i9
+(distinct random DRAM-fed buffers so the memory ceiling isn't hidden by
+cache; 15 interleaved trials each, t-test), the effect is **small but
+statistically significant, and its sign flips with memory contention:**
 
-| config | throughput |
-|---|---|
-| 6 P-cores, 1 thread each | ~21.4 GiB/s |
-| 6 P-cores, 2 threads each (SMT) | ~21.3 GiB/s (**≈0%**) |
+| scope | 1 thread/core → 2 threads/core (SMT) | verdict (n=15, 3 runs) |
+|---|---|---|
+| 6 P-cores alone | **+2.5%** | significant, stable |
+| whole machine (14 physical cores) | **−2.5%** | significant, stable |
 
-So `PcoreHasher::new_physical()` pins **one thread per physical P-core** —
-matching `new()`'s throughput with half the threads (and on I/O-bound
-batches the two are within noise of each other). Use `new_physical()` for
-CPU-bound in-memory hashing; use `new()` when reads may stall on disk and
-the idle SMT thread can hide the latency.
+On the P-cores alone there's enough memory-stall slack for the SMT thread
+to add ~+2.5%; once all 14 physical cores are hammering DRAM the machine
+is bandwidth-bound and the extra 6 threads cost ~−2.5%.
+
+`PcoreHasher::new_physical()` pins **one thread per physical P-core** —
+half the threads of `new()`. It is *not* a throughput win (it's ~2–3%
+slower in-memory, since the library uses P-cores where SMT helps); its
+value is a smaller thread footprint that leaves the SMT siblings free.
+**For maximum throughput, use `new()`** — especially on I/O-bound batches,
+where the idle sibling hides read latency. (An earlier, cache-hot
+measurement wrongly suggested SMT was worthless; the numbers above are the
+corrected, DRAM-fed result.)
 
 ## Install
 

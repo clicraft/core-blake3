@@ -124,15 +124,16 @@ impl PcoreHasher {
     }
 
     /// Like [`Self::new`] but pins **one thread per physical P-core**,
-    /// collapsing SMT siblings.
+    /// collapsing SMT siblings — half the threads of [`Self::new`].
     ///
-    /// For CPU-bound, already-in-memory hashing this matches
-    /// [`Self::new`]'s throughput with half the threads: BLAKE3 saturates a
-    /// core's SIMD units from a single thread, so the second SMT thread
-    /// adds essentially nothing (measured within noise on a 13th-gen i9).
-    /// Fewer threads means less scheduling overhead and leaves the sibling
-    /// logical CPUs free for other work. Prefer [`Self::new`] instead when
-    /// the batch is I/O-bound.
+    /// This is **not** a throughput win: rigorous DRAM-fed measurement on a
+    /// 13th-gen i9 (n=15, t-test) found the second SMT thread per P-core
+    /// *helps* in-memory hashing by a small but significant ~2.5%, so
+    /// `new_physical()` runs ~2–3% slower than [`Self::new`]. Its value is
+    /// a smaller thread footprint that leaves the SMT-sibling logical CPUs
+    /// free for other work. **Prefer [`Self::new`] for maximum
+    /// throughput**, especially on I/O-bound batches where the idle sibling
+    /// hides read latency.
     pub fn new_physical() -> Self {
         Self::with_cpus(&default_physical_cpus())
     }
