@@ -1,0 +1,37 @@
+[package]
+name = "pcore-blake3"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "BLAKE3 hashing that auto-detects performance cores on hybrid CPUs and picks an optimal thread split"
+repository = "https://github.com/clicraft/pcore-blake3"
+readme = "README.md"
+keywords = ["blake3", "hashing", "hybrid-cpu", "affinity", "performance"]
+categories = ["algorithms", "concurrency", "command-line-utilities"]
+
+[lib]
+name = "pcore_blake3"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pcore-blake3"
+path = "src/bin/main.rs"
+
+[dependencies]
+blake3 = { version = "1", features = ["rayon"] }
+rayon = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_Foundation",
+] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

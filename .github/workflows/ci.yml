@@ -1,0 +1,35 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cargo build --release
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --release
+      # Smoke-run the CLI: on windows-latest this executes the Windows
+      # detection path on a real (homogeneous) Windows machine — the
+      # hybrid-topology branch itself still needs hybrid hardware.
+      - name: CLI smoke test
+        run: cargo run --release --bin pcore-blake3 -- --info
+
+  # Cross-target typecheck from Linux, so a PR touching the Windows module
+  # fails fast even before the windows runner picks it up.
+  windows-cross-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add Windows target
+        run: rustup target add x86_64-pc-windows-gnu
+      - name: Typecheck Windows module
+        run: cargo check --target x86_64-pc-windows-gnu
