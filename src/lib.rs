@@ -137,15 +137,22 @@ impl PcoreHasher {
         (self.threads_per_file, self.concurrent_files)
     }
 
+    /// Hashes an in-memory buffer, using this hasher's first pool's
+    /// internal BLAKE3 tree parallelism. The digest is identical to
+    /// `blake3::hash(data)` — parallelism never changes the result.
+    pub fn hash_bytes(&self, data: &[u8]) -> blake3::Hash {
+        self.pools[0].install(|| {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update_rayon(data);
+            hasher.finalize()
+        })
+    }
+
     /// Hashes a single file, using this hasher's first pool's internal
     /// BLAKE3 tree parallelism.
     pub fn hash_file(&self, path: impl AsRef<Path>) -> io::Result<blake3::Hash> {
         let data = std::fs::read(path)?;
-        Ok(self.pools[0].install(|| {
-            let mut hasher = blake3::Hasher::new();
-            hasher.update_rayon(&data);
-            hasher.finalize()
-        }))
+        Ok(self.hash_bytes(&data))
     }
 
     /// Hashes many files, spreading them across this hasher's concurrent
@@ -213,6 +220,17 @@ mod tests {
             assert!(tpf >= 1 && tpf <= threads.max(1));
             assert!(cf >= 1);
             assert!(tpf * cf <= threads.max(1) || threads == 0);
+        }
+    }
+
+    #[test]
+    fn hash_bytes_matches_reference_blake3() {
+        let hasher = PcoreHasher::with_cpus(&[0, 1]);
+        // Cover both sides of BLAKE3's 1024-byte chunk boundary and a
+        // multi-chunk buffer where the parallel tree path actually engages.
+        for len in [0usize, 1, 1023, 1024, 1025, 1 << 20] {
+            let data: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            assert_eq!(hasher.hash_bytes(&data), blake3::hash(&data), "len {len}");
         }
     }
 

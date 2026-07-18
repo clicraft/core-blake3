@@ -1,6 +1,6 @@
 [package]
 name = "pcore-blake3"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "BLAKE3 hashing that auto-detects performance cores on hybrid CPUs and picks an optimal thread split"
@@ -35,3 +35,4 @@ windows-sys = { version = "0.59", features = [
 opt-level = 3
 lto = true
 codegen-units = 1
+strip = true

@@ -1,0 +1,56 @@
+name: Release
+
+# Version tags (v0.2.0, v1.0.0, ...) build release binaries on real Linux
+# and Windows runners — the Windows binary is compiled natively on
+# windows-latest, not cross-compiled — and attach them to a GitHub
+# Release for that tag.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary: target/release/pcore-blake3
+            artifact: pcore-blake3-x86_64-linux
+          - os: windows-latest
+            binary: target/release/pcore-blake3.exe
+            artifact: pcore-blake3-x86_64-windows.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release binary
+        run: cargo build --release
+      - name: Tests must pass before anything ships
+        run: cargo test --release
+      - name: Stage artifact under its release name
+        shell: bash
+        run: cp "${{ matrix.binary }}" "${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create GitHub release with binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
