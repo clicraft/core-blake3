@@ -43,9 +43,26 @@ physical P-cores via SMT, so 4 SMT'd P-cores ≈ 8 E-cores here:
 | 8 P-core threads (4x2) | ~8.6 GiB/s |
 
 The reason to pin to P-cores isn't a big per-thread win — it's that
-`PcoreHasher::new()` then gets to use **all 12 P-threads** (~13 GiB/s)
-without slow E-cores dragging down a shared work-stealing pool as
+`PcoreHasher::new()` then gets to use **all 6 physical P-cores** (~13
+GiB/s) without slow E-cores dragging down a shared work-stealing pool as
 stragglers.
+
+### Threads vs cores: SMT is (almost) free of benefit here
+
+BLAKE3 saturates a core's AVX2 (SIMD) units from a *single* thread, so the
+second SMT/Hyper-Threading thread on a P-core adds essentially nothing.
+Measured on the reference i9 (per physical core, in-memory):
+
+| config | throughput |
+|---|---|
+| 6 P-cores, 1 thread each | ~21.4 GiB/s |
+| 6 P-cores, 2 threads each (SMT) | ~21.3 GiB/s (**≈0%**) |
+
+So `PcoreHasher::new_physical()` pins **one thread per physical P-core** —
+matching `new()`'s throughput with half the threads (and on I/O-bound
+batches the two are within noise of each other). Use `new_physical()` for
+CPU-bound in-memory hashing; use `new()` when reads may stall on disk and
+the idle SMT thread can hide the latency.
 
 ## Install
 
@@ -83,6 +100,12 @@ let hash = hasher.hash_bytes(b"some data");
 // A batch, spread across the hasher's pinned pools; results come back
 // in input order, one io::Result per file:
 let results = hasher.hash_files(&["a.pdf".into(), "b.pdf".into()]);
+
+// One thread per PHYSICAL P-core (collapse SMT siblings). For CPU-bound,
+// in-memory hashing this matches new()'s throughput with half the threads
+// — BLAKE3 saturates a core's SIMD units from one thread, so the second
+// SMT thread adds nothing. Prefer new() when the batch is I/O-bound.
+let hasher = PcoreHasher::new_physical();
 ```
 
 ## CLI usage
@@ -90,12 +113,14 @@ let results = hasher.hash_files(&["a.pdf".into(), "b.pdf".into()]);
 ```console
 $ pcore-blake3 --info
 Topology: hybrid
-Performance cores: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-Efficiency cores: [12, 13, 14, 15, 16, 17, 18, 19]
+Performance cores: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] (12 threads, 6 physical)
+Efficiency cores: [12, 13, 14, 15, 16, 17, 18, 19] (8 threads)
 Thread split: 6 threads/file x 2 concurrent files
 
 $ pcore-blake3 student_01.pdf
 f6d63989f74942e5b2789d170a8ef583aedfd99ff6df21f851941ea465d22e27  student_01.pdf
+
+$ pcore-blake3 --physical *.pdf   # one thread per physical P-core
 ```
 
 Output format is `b3sum`-compatible: `<hex digest><2 spaces><path>`.
@@ -118,10 +143,13 @@ arguments) and validated on real hybrid hardware:
 |---|---|
 | `topology() -> Topology` | `Hybrid` or `Homogeneous` |
 | `performance_cpus() -> Vec<usize>` | logical CPU ids of P-cores (all CPUs on homogeneous machines) |
+| `performance_physical_cpus() -> Vec<usize>` | one logical CPU per physical P-core (SMT siblings collapsed) |
 | `efficiency_cpus() -> Vec<usize>` | logical CPU ids of E-cores (empty on homogeneous machines) |
+| `physical_core_leaders(&[usize]) -> Vec<usize>` | collapse SMT siblings in any CPU set |
 | `pin_current_thread_to_cpu(usize)` | pin the calling thread to one logical CPU |
 | `optimal_split(threads) -> (tpf, cf)` | the threads/2 heuristic: threads per file x concurrent files |
-| `PcoreHasher::new()` | pools pinned to auto-detected P-cores |
+| `PcoreHasher::new()` | pools pinned to auto-detected P-cores (all P-threads) |
+| `PcoreHasher::new_physical()` | one thread per physical P-core (SMT siblings collapsed) |
 | `PcoreHasher::with_cpus(&[usize])` | pools pinned to an explicit CPU set |
 | `PcoreHasher::split()` | the (threads/file, concurrent files) this hasher chose |
 | `PcoreHasher::hash_bytes(&[u8])` | hash an in-memory buffer |

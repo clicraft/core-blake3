@@ -40,6 +40,29 @@ pub fn efficiency_cpus() -> Vec<usize> {
     imp::efficiency_cpus()
 }
 
+/// Collapses SMT siblings: given a set of logical CPU IDs, returns one
+/// representative (the lowest-numbered sibling present in the input) per
+/// distinct physical core, preserving first-seen order.
+///
+/// On a machine with SMT/Hyper-Threading this roughly halves the list;
+/// with no SMT it returns the input unchanged. If per-CPU topology can't
+/// be read, it conservatively returns the input as-is (every CPU treated
+/// as its own core).
+///
+/// Useful because some workloads — notably BLAKE3, which saturates a
+/// core's SIMD units from a single thread — gain nothing from the second
+/// SMT thread on a core, so one thread per *physical* core delivers the
+/// same throughput with half the threads.
+pub fn physical_core_leaders(cpus: &[usize]) -> Vec<usize> {
+    imp::physical_leaders(cpus)
+}
+
+/// One logical CPU per physical performance core (SMT siblings collapsed).
+/// Convenience for `physical_core_leaders(&performance_cpus())`.
+pub fn performance_physical_cpus() -> Vec<usize> {
+    physical_core_leaders(&performance_cpus())
+}
+
 /// Pins the calling thread to a single logical CPU.
 ///
 /// Linux: `sched_setaffinity(0, ...)`, which affects only the calling
@@ -146,6 +169,34 @@ mod imp {
         read_cpu_list(SYSFS_CPU_ATOM_CPUS).unwrap_or_default()
     }
 
+    /// The logical CPUs sharing a physical core with `cpu` (including
+    /// itself), from `topology/thread_siblings_list`.
+    fn thread_siblings(cpu: usize) -> Option<Vec<usize>> {
+        let path = format!("/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list");
+        let s = std::fs::read_to_string(path).ok()?;
+        parse_cpu_list(s.trim_end_matches(['\n', '\r']))
+    }
+
+    pub fn physical_leaders(cpus: &[usize]) -> Vec<usize> {
+        use std::collections::HashSet;
+        let want: HashSet<usize> = cpus.iter().copied().collect();
+        let mut seen_cores: HashSet<usize> = HashSet::new();
+        let mut out = Vec::new();
+        for &cpu in cpus {
+            let siblings = thread_siblings(cpu).unwrap_or_else(|| vec![cpu]);
+            // A core is keyed by its lowest sibling id, so the key is the
+            // same whichever sibling we visit first.
+            let core_key = siblings.iter().copied().min().unwrap_or(cpu);
+            if seen_cores.insert(core_key) {
+                // Representative: lowest sibling that's actually in the
+                // requested set (so we never emit a CPU the caller excluded).
+                let rep = siblings.iter().copied().filter(|s| want.contains(s)).min().unwrap_or(cpu);
+                out.push(rep);
+            }
+        }
+        out
+    }
+
     pub fn pin_current_thread_to_cpu(cpu: usize) -> io::Result<()> {
         unsafe {
             let mut set: libc::cpu_set_t = std::mem::zeroed();
@@ -170,9 +221,17 @@ mod imp {
     };
     use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadAffinityMask};
 
-    /// Returns `(logical_processor_index, efficiency_class)` for every
-    /// logical processor on the system.
-    fn query_cpu_sets() -> Option<Vec<(usize, u8)>> {
+    /// One logical processor's identity from the CPU-set table.
+    struct CpuInfo {
+        logical: usize,
+        efficiency: u8,
+        /// `CoreIndex`: same value for logical processors sharing a
+        /// physical core (i.e. SMT siblings).
+        core: u8,
+    }
+
+    /// Returns a `CpuInfo` for every logical processor on the system.
+    fn query_cpu_sets() -> Option<Vec<CpuInfo>> {
         unsafe {
             let mut needed: u32 = 0;
             // Signature: GetSystemCpuSetInformation(Information, BufferLength,
@@ -221,7 +280,11 @@ mod imp {
                 if ty == CpuSetInformation && offset + entry_size <= len && size >= entry_size {
                     let info = std::ptr::read_unaligned(base.add(offset).cast::<SYSTEM_CPU_SET_INFORMATION>());
                     let cpu_set = info.Anonymous.CpuSet;
-                    result.push((cpu_set.LogicalProcessorIndex as usize, cpu_set.EfficiencyClass));
+                    result.push(CpuInfo {
+                        logical: cpu_set.LogicalProcessorIndex as usize,
+                        efficiency: cpu_set.EfficiencyClass,
+                        core: cpu_set.CoreIndex,
+                    });
                 }
                 offset += size;
             }
@@ -232,8 +295,8 @@ mod imp {
     pub fn topology() -> Topology {
         match query_cpu_sets() {
             Some(sets) if !sets.is_empty() => {
-                let min = sets.iter().map(|(_, e)| *e).min().unwrap();
-                let max = sets.iter().map(|(_, e)| *e).max().unwrap();
+                let min = sets.iter().map(|c| c.efficiency).min().unwrap();
+                let max = sets.iter().map(|c| c.efficiency).max().unwrap();
                 if max > min {
                     Topology::Hybrid
                 } else {
@@ -247,8 +310,8 @@ mod imp {
     pub fn performance_cpus() -> Vec<usize> {
         match query_cpu_sets() {
             Some(sets) if !sets.is_empty() => {
-                let max = sets.iter().map(|(_, e)| *e).max().unwrap();
-                sets.iter().filter(|(_, e)| *e == max).map(|(cpu, _)| *cpu).collect()
+                let max = sets.iter().map(|c| c.efficiency).max().unwrap();
+                sets.iter().filter(|c| c.efficiency == max).map(|c| c.logical).collect()
             }
             _ => Vec::new(),
         }
@@ -257,15 +320,38 @@ mod imp {
     pub fn efficiency_cpus() -> Vec<usize> {
         match query_cpu_sets() {
             Some(sets) if !sets.is_empty() => {
-                let min = sets.iter().map(|(_, e)| *e).min().unwrap();
-                let max = sets.iter().map(|(_, e)| *e).max().unwrap();
+                let min = sets.iter().map(|c| c.efficiency).min().unwrap();
+                let max = sets.iter().map(|c| c.efficiency).max().unwrap();
                 if max == min {
                     return Vec::new(); // homogeneous
                 }
-                sets.iter().filter(|(_, e)| *e < max).map(|(cpu, _)| *cpu).collect()
+                sets.iter().filter(|c| c.efficiency < max).map(|c| c.logical).collect()
             }
             _ => Vec::new(),
         }
+    }
+
+    pub fn physical_leaders(cpus: &[usize]) -> Vec<usize> {
+        use std::collections::{HashMap, HashSet};
+        let Some(sets) = query_cpu_sets() else {
+            return cpus.to_vec(); // no topology info; treat each as its own core
+        };
+        let core_of: HashMap<usize, u8> = sets.iter().map(|c| (c.logical, c.core)).collect();
+        let mut seen_cores: HashSet<u8> = HashSet::new();
+        let mut out = Vec::new();
+        for &cpu in cpus {
+            match core_of.get(&cpu) {
+                // First logical CPU we see for a given physical core wins;
+                // callers pass sorted lists, so that's the lowest sibling.
+                Some(&core) => {
+                    if seen_cores.insert(core) {
+                        out.push(cpu);
+                    }
+                }
+                None => out.push(cpu), // unknown CPU; treat as its own core
+            }
+        }
+        out
     }
 
     pub fn pin_current_thread_to_cpu(cpu: usize) -> io::Result<()> {
@@ -298,6 +384,11 @@ mod imp {
 
     pub fn efficiency_cpus() -> Vec<usize> {
         Vec::new()
+    }
+
+    pub fn physical_leaders(cpus: &[usize]) -> Vec<usize> {
+        // No topology source on this platform; treat every CPU as its own core.
+        cpus.to_vec()
     }
 
     pub fn pin_current_thread_to_cpu(_cpu: usize) -> io::Result<()> {
@@ -375,6 +466,50 @@ mod tests {
         match topology() {
             Topology::Hybrid => assert!(!e.is_empty(), "hybrid implies a non-empty E-core list"),
             Topology::Homogeneous => assert!(e.is_empty(), "homogeneous implies no E-cores"),
+        }
+    }
+
+    #[test]
+    fn physical_core_leaders_are_idempotent_and_a_subset() {
+        let cpus = performance_cpus();
+        if cpus.is_empty() {
+            return;
+        }
+        let leaders = physical_core_leaders(&cpus);
+        // Every leader was in the input.
+        assert!(leaders.iter().all(|c| cpus.contains(c)), "leaders must be a subset");
+        // No duplicates.
+        let mut sorted = leaders.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), leaders.len(), "leaders must be distinct");
+        // Collapsing an already-collapsed set changes nothing.
+        assert_eq!(physical_core_leaders(&leaders), leaders, "idempotent");
+        // Never more leaders than inputs.
+        assert!(leaders.len() <= cpus.len());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn physical_leaders_collapse_smt_siblings() {
+        // On an SMT machine the P-core leader count equals the physical
+        // P-core count, which is strictly fewer than the logical count.
+        // This is only asserted when we can actually see SMT (siblings > 1).
+        let cpus = performance_cpus();
+        if cpus.len() < 2 {
+            return;
+        }
+        let leaders = physical_core_leaders(&cpus);
+        let first_siblings = std::fs::read_to_string(format!(
+            "/sys/devices/system/cpu/cpu{}/topology/thread_siblings_list",
+            cpus[0]
+        ))
+        .unwrap_or_default();
+        let has_smt = first_siblings.contains(',') || first_siblings.contains('-');
+        if has_smt {
+            assert!(leaders.len() < cpus.len(), "SMT machine: fewer leaders than logical CPUs");
+        } else {
+            assert_eq!(leaders.len(), cpus.len(), "no SMT: one leader per CPU");
         }
     }
 

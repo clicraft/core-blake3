@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-18
+
+### Added
+
+- Physical-core detection and a one-thread-per-physical-core hashing mode:
+  - `PcoreHasher::new_physical()` — pins one thread per physical P-core
+    (SMT siblings collapsed). Matches `new()`'s throughput with half the
+    threads on CPU-bound in-memory hashing, because BLAKE3 saturates a
+    core's SIMD units from a single thread (measured within noise on a
+    13th-gen i9; the batch path was even marginally faster).
+  - `performance_physical_cpus()` and the general `physical_core_leaders()`
+    helper (Linux via `thread_siblings_list`; Windows via the CPU-set
+    `CoreIndex`).
+  - CLI `--physical` flag; `--info` now reports thread vs physical-core
+    counts.
+
 ### Fixed
 
 - `pcore_vs_ecore` example now compares P- and E-cores at **equal thread
@@ -63,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI: build/clippy/test on `ubuntu-latest` and `windows-latest`, plus a
   Linux-side cross-target typecheck of the Windows module.
 
-[Unreleased]: https://github.com/clicraft/pcore-blake3/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/clicraft/pcore-blake3/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/clicraft/pcore-blake3/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/clicraft/pcore-blake3/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/clicraft/pcore-blake3/releases/tag/v0.1.0

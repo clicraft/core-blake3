@@ -6,16 +6,21 @@
 //! Covers: [`topology`], [`performance_cpus`], [`efficiency_cpus`],
 //! [`optimal_split`], [`PcoreHasher::split`].
 
-use pcore_blake3::{efficiency_cpus, optimal_split, performance_cpus, topology, PcoreHasher, Topology};
+use pcore_blake3::{
+    efficiency_cpus, optimal_split, performance_cpus, performance_physical_cpus, topology,
+    PcoreHasher, Topology,
+};
 
 fn main() {
     let topo = topology();
     let p = performance_cpus();
+    let p_phys = performance_physical_cpus();
     let e = efficiency_cpus();
 
-    println!("Topology          : {topo:?}");
-    println!("Performance cores : {p:?}");
-    println!("Efficiency cores  : {e:?}");
+    println!("Topology              : {topo:?}");
+    println!("Performance cores     : {p:?} ({} threads)", p.len());
+    println!("  ...physical (no SMT): {p_phys:?} ({} cores)", p_phys.len());
+    println!("Efficiency cores      : {e:?} ({} threads)", e.len());
 
     let hasher = PcoreHasher::new();
     let (tpf, cf) = hasher.split();
