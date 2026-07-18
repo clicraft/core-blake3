@@ -21,7 +21,7 @@ jobs:
       # detection path on a real (homogeneous) Windows machine — the
       # hybrid-topology branch itself still needs hybrid hardware.
       - name: CLI smoke test
-        run: cargo run --release --bin pcore-blake3 -- --info
+        run: cargo run --release --bin core-blake3 -- --info
 
   # Cross-target typecheck from Linux, so a PR touching the Windows module
   # fails fast even before the windows runner picks it up.

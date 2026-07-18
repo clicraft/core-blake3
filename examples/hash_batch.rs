@@ -4,10 +4,10 @@
 //! Run: `cargo run --release --example hash_batch -- <dir>`
 //! Without an argument, 8 temporary 8 MiB files are generated and hashed.
 //!
-//! Covers: [`PcoreHasher::hash_files`] (order-preserving, per-file
+//! Covers: [`CoreHasher::hash_files`] (order-preserving, per-file
 //! `Result`s — a missing file is demonstrated deliberately).
 
-use pcore_blake3::PcoreHasher;
+use core_blake3::CoreHasher;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -29,7 +29,7 @@ fn generate_temp_files() -> std::io::Result<TempDirFiles> {
     let block: Vec<u8> = (0..1 << 16).map(|i| (i % 251) as u8).collect();
     let mut paths = Vec::new();
     for i in 0..COUNT {
-        let path = std::env::temp_dir().join(format!("pcore-blake3-batch-{}-{i:02}.bin", std::process::id()));
+        let path = std::env::temp_dir().join(format!("core-blake3-batch-{}-{i:02}.bin", std::process::id()));
         let mut f = std::fs::File::create(&path)?;
         for _ in 0..SIZE / block.len() {
             f.write_all(&block)?;
@@ -66,11 +66,10 @@ fn main() -> std::io::Result<()> {
 
     // Deliberately include a nonexistent path to show per-file error
     // handling: one bad entry must not poison the rest of the batch.
-    paths.push(PathBuf::from("/nonexistent/pcore-blake3-demo"));
+    paths.push(PathBuf::from("/nonexistent/core-blake3-demo"));
 
-    let hasher = PcoreHasher::new();
-    let (tpf, cf) = hasher.split();
-    println!("Hashing {} files with {tpf} threads/file x {cf} concurrent files\n", paths.len());
+    let hasher = CoreHasher::new();
+    println!("Hashing {} files with {} threads (one per physical core)\n", paths.len(), hasher.threads());
 
     let start = Instant::now();
     let results = hasher.hash_files(&paths);

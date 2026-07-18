@@ -15,11 +15,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            binary: target/release/pcore-blake3
-            artifact: pcore-blake3-x86_64-linux
+            binary: target/release/core-blake3
+            artifact: core-blake3-x86_64-linux
           - os: windows-latest
-            binary: target/release/pcore-blake3.exe
-            artifact: pcore-blake3-x86_64-windows.exe
+            binary: target/release/core-blake3.exe
+            artifact: core-blake3-x86_64-windows.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

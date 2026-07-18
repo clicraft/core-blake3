@@ -73,6 +73,15 @@ pub fn all_physical_cpus() -> Vec<usize> {
     physical_core_leaders(&cpus)
 }
 
+/// Every logical CPU on the machine — all cores, all SMT threads.
+pub fn all_logical_cpus() -> Vec<usize> {
+    let mut cpus = performance_cpus();
+    cpus.extend(efficiency_cpus());
+    cpus.sort_unstable();
+    cpus.dedup();
+    cpus
+}
+
 /// Pins the calling thread to a single logical CPU.
 ///
 /// Linux: `sched_setaffinity(0, ...)`, which affects only the calling

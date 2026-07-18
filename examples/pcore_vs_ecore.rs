@@ -4,14 +4,14 @@
 //!
 //! Run: `cargo run --release --example pcore_vs_ecore`
 //!
-//! Covers: [`PcoreHasher::with_cpus`], [`PcoreHasher::hash_bytes`],
+//! Covers: [`CoreHasher::with_cpus`], [`CoreHasher::hash_bytes`],
 //! [`topology`] gating.
 //!
 //! This is a demo, not a benchmark: single buffer, best-of-5 timing, no
 //! shuffling or cache control. For rigorous numbers, see the methodology
 //! in the README's "Why" section.
 
-use pcore_blake3::{efficiency_cpus, performance_cpus, topology, PcoreHasher, Topology};
+use core_blake3::{efficiency_cpus, performance_cpus, topology, CoreHasher, Topology};
 use std::time::{Duration, Instant};
 
 const SIZE: usize = 256 * 1024 * 1024;
@@ -48,14 +48,11 @@ fn main() {
     let p_subset = &p_cpus[..n];
     let e_subset = &e_cpus[..n];
 
-    let p_hasher = PcoreHasher::with_cpus(p_subset);
-    let e_hasher = PcoreHasher::with_cpus(e_subset);
-    // Same thread count -> identical split for both, so the only variable
-    // is which physical cores run the work.
-    let (tpf, cf) = p_hasher.split();
+    let p_hasher = CoreHasher::with_cpus(p_subset);
+    let e_hasher = CoreHasher::with_cpus(e_subset);
 
     println!("Buffer: {} MiB, best of {REPS} runs each", SIZE >> 20);
-    println!("Fair comparison: {n} threads each, {tpf} threads/file x {cf} concurrent files");
+    println!("Fair comparison: {n} threads each (tree-parallel over the pool)");
     println!("  P-core threads: {p_subset:?}");
     println!("  E-core threads: {e_subset:?}");
     if n < p_cpus.len() {
@@ -94,13 +91,13 @@ fn main() {
     );
     println!(
         "{:<34} {:>12.1} {:>12.0}",
-        format!("{n} P-core threads ({tpf}x{cf})"),
+        format!("{n} P-core threads"),
         t_p.as_secs_f64() * 1e3,
         mib_s(SIZE, t_p)
     );
     println!(
         "{:<34} {:>12.1} {:>12.0}",
-        format!("{n} E-core threads ({tpf}x{cf})"),
+        format!("{n} E-core threads"),
         t_e.as_secs_f64() * 1e3,
         mib_s(SIZE, t_e)
     );

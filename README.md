@@ -1,6 +1,6 @@
-# pcore-blake3
+# core-blake3
 
-[![CI](https://github.com/clicraft/pcore-blake3/actions/workflows/ci.yml/badge.svg)](https://github.com/clicraft/pcore-blake3/actions/workflows/ci.yml)
+[![CI](https://github.com/clicraft/core-blake3/actions/workflows/ci.yml/badge.svg)](https://github.com/clicraft/core-blake3/actions/workflows/ci.yml)
 
 Fast BLAKE3 file hashing that pins work to your CPU's cores. On hybrid CPUs
 (Intel P/E-core, AMD) it detects performance vs efficiency cores and runs
@@ -16,49 +16,56 @@ core detection, pinning, and scheduling around it.
 
 ```toml
 [dependencies]
-pcore-blake3 = { git = "https://github.com/clicraft/pcore-blake3", tag = "v0.4.0" }
+core-blake3 = { git = "https://github.com/clicraft/core-blake3", tag = "v0.5.0" }
 ```
 
-CLI: `cargo install --git https://github.com/clicraft/pcore-blake3`, or grab
+CLI: `cargo install --git https://github.com/clicraft/core-blake3`, or grab
 a prebuilt Linux/Windows binary from
-[Releases](https://github.com/clicraft/pcore-blake3/releases).
+[Releases](https://github.com/clicraft/core-blake3/releases).
 
 ## Library usage
 
 ```rust
-use pcore_blake3::PcoreHasher;
+use core_blake3::CoreHasher;
 
-let hasher = PcoreHasher::new();          // pins to the performance cores
-let hash = hasher.hash_file("doc.pdf")?;  // one file
+let hasher = CoreHasher::new();           // one thread per physical core
+let hash = hasher.hash_file("doc.pdf")?;  // one file (tree-parallel over all cores)
 let hash = hasher.hash_bytes(b"data");    // in-memory buffer
 
-// A batch: results come back in input order, one io::Result per file.
+// A batch: one file per thread, results in input order, one Result per file.
 let hashes = hasher.hash_files(&["a.pdf".into(), "b.pdf".into()]);
 ```
 
-Digests are identical to `blake3::hash` — the parallel scheduling never
-changes the result.
+Digests are identical to `blake3::hash` — the scheduling never changes the
+result. A single file uses BLAKE3's tree parallelism across every core; a
+batch hashes one file per thread (rayon work-steals, so fast cores take
+more files and slow ones fewer).
 
 ### Modes
 
-| constructor | cores used | when |
+Two modes, both spanning every core (P and E on a hybrid CPU):
+
+| constructor | threads | when |
 |---|---|---|
-| `PcoreHasher::new()` | performance cores | **default** — great for single files and I/O-bound batches |
-| `PcoreHasher::new_physical()` | one thread per physical P-core | smaller thread footprint |
-| `PcoreHasher::new_all_physical()` | one thread per physical core, P **and** E | maximum throughput on large batches (uses the E-cores) |
+| `CoreHasher::new()` | one per **physical core** | **default** — the efficient sweet spot |
+| `CoreHasher::all_threads()` | one per **logical CPU** (all SMT threads) | the conventional "use everything" baseline |
+
+One thread per physical core is BLAKE3's throughput sweet spot: it
+saturates each core's SIMD units, so the extra SMT thread per core doesn't
+help (and slightly hurts once the machine is memory-bandwidth-bound).
 
 ## CLI
 
 ```console
-$ pcore-blake3 --info
+$ core-blake3 --info
 Topology: hybrid
-Performance cores: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] (12 threads, 6 physical)
-Efficiency cores: [12, 13, 14, 15, 16, 17, 18, 19] (8 threads)
-All physical cores (P+E): 14 (for --all-physical)
-Thread split: 6 threads/file x 2 concurrent files
+Performance cores: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+Efficiency cores: [12, 13, 14, 15, 16, 17, 18, 19]
+Physical cores (P+E): 14   Logical CPUs: 20
+This run: 14 threads (one per physical core)
 
-$ pcore-blake3 doc1.pdf doc2.pdf          # b3sum-compatible output
-$ pcore-blake3 --all-physical *.pdf       # max throughput, uses E-cores
+$ core-blake3 doc1.pdf doc2.pdf       # b3sum-compatible output
+$ core-blake3 --all-threads *.pdf     # use every logical CPU instead
 ```
 
 ## Examples
@@ -80,13 +87,13 @@ Run with `cargo run --release --example <name>`.
 |---|---|
 | `topology() -> Topology` | `Hybrid` or `Homogeneous` |
 | `performance_cpus()` / `efficiency_cpus()` | logical CPU ids of P- / E-cores |
-| `performance_physical_cpus()` | one logical CPU per physical P-core |
 | `all_physical_cpus()` | one logical CPU per physical core, P and E |
+| `all_logical_cpus()` | every logical CPU (all SMT threads) |
 | `physical_core_leaders(&[usize])` | collapse SMT siblings in any CPU set |
 | `pin_current_thread_to_cpu(usize)` | pin the calling thread to one CPU |
-| `optimal_split(threads)` | the thread-split heuristic |
-| `PcoreHasher::new` / `new_physical` / `new_all_physical` / `with_cpus` | build a hasher |
-| `PcoreHasher::hash_bytes` / `hash_file` / `hash_files` | hash |
+| `CoreHasher::new` / `all_threads` / `with_cpus` | build a hasher |
+| `CoreHasher::threads` | thread count of this hasher |
+| `CoreHasher::hash_bytes` / `hash_file` / `hash_files` | hash |
 
 ## Platform support
 

@@ -4,10 +4,10 @@
 //! Run: `cargo run --release --example hash_file -- <path>`
 //! Without an argument, a 64 MiB temporary file is generated and hashed.
 //!
-//! Covers: [`PcoreHasher::new`], [`PcoreHasher::hash_file`],
-//! [`PcoreHasher::split`].
+//! Covers: [`CoreHasher::new`], [`CoreHasher::hash_file`],
+//! [`CoreHasher::threads`].
 
-use pcore_blake3::PcoreHasher;
+use core_blake3::CoreHasher;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -23,7 +23,7 @@ impl Drop for TempFile {
 
 fn generate_temp_file() -> std::io::Result<TempFile> {
     const SIZE: usize = 64 * 1024 * 1024;
-    let path = std::env::temp_dir().join(format!("pcore-blake3-example-{}.bin", std::process::id()));
+    let path = std::env::temp_dir().join(format!("core-blake3-example-{}.bin", std::process::id()));
     let mut f = std::fs::File::create(&path)?;
     // Patterned, not all-zero, so the input resembles real data.
     let block: Vec<u8> = (0..1 << 16).map(|i| (i % 251) as u8).collect();
@@ -43,9 +43,8 @@ fn main() -> std::io::Result<()> {
         }
     };
 
-    let hasher = PcoreHasher::new();
-    let (tpf, cf) = hasher.split();
-    println!("Using {tpf} threads/file x {cf} concurrent files\n");
+    let hasher = CoreHasher::new();
+    println!("Using {} threads (one per physical core)\n", hasher.threads());
 
     let size = std::fs::metadata(&path)?.len();
     let start = Instant::now();

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-18
+
+### Changed (breaking)
+
+- **Renamed the crate `pcore-blake3` → `core-blake3`** (package, library
+  `core_blake3`, CLI binary, and GitHub repo). It schedules across every
+  core, P and E, so the P-core-only name was misleading.
+- **Simplified to two modes.** `PcoreHasher` is now `CoreHasher` with just:
+  - `CoreHasher::new()` — one thread per **physical core** (all cores, SMT
+    siblings collapsed). The efficient default.
+  - `CoreHasher::all_threads()` — one thread per **logical CPU** (every SMT
+    thread). The conventional baseline.
+  Removed `new_physical()`, `new_all_physical()`, `optimal_split()`, and the
+  `(threads_per_file, concurrent_files)` `split()` accessor (replaced by
+  `threads()`). Internally a single pinned pool now hashes a single file
+  tree-parallel across all cores and a batch one-file-per-thread via rayon
+  work-stealing.
+- CLI: `--physical` / `--all-physical` flags replaced by a single
+  `--all-threads` (default is one thread per physical core).
+- Added `all_logical_cpus()`.
+
 ## [0.4.0] - 2026-07-18
 
 ### Added
@@ -110,16 +131,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PcoreHasher` with the empirically derived threads/2 split between
   BLAKE3 tree parallelism and concurrent files; `optimal_split` exposes
   the heuristic directly.
-- `pcore-blake3` CLI (`b3sum`-style output, `--info`).
+- `core-blake3` CLI (`b3sum`-style output, `--info`).
 - Strict cpulist grammar shared with the C reference, locked by a
   28-case differential corpus; value cap 8191 (fixes an OOM-on-malformed-
   input defect found during port validation).
 - CI: build/clippy/test on `ubuntu-latest` and `windows-latest`, plus a
   Linux-side cross-target typecheck of the Windows module.
 
-[Unreleased]: https://github.com/clicraft/pcore-blake3/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/clicraft/pcore-blake3/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/clicraft/pcore-blake3/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/clicraft/pcore-blake3/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/clicraft/pcore-blake3/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/clicraft/pcore-blake3/releases/tag/v0.1.0
+[Unreleased]: https://github.com/clicraft/core-blake3/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/clicraft/core-blake3/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/clicraft/core-blake3/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/clicraft/core-blake3/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/clicraft/core-blake3/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/clicraft/core-blake3/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/clicraft/core-blake3/releases/tag/v0.1.0

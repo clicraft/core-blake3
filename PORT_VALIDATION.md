@@ -33,7 +33,7 @@ Five validation layers were applied, in order:
 | F4a | both parsers | divergences | On malformed input, C and Rust disagreed: `"0-3junk"` C-OK/Rust-ERR, `"5,,6"` C-ERR/Rust-OK, `"5 , 6"` C silently truncated to `[5]`, `"-1"` C emitted a **negative CPU id**, `","` C-ERR/Rust-OK. | One strict grammar (below) enforced identically in both. |
 | F4b | Rust parser | DoS defect | `"0-999999999999"` made Rust materialize the whole range (`out.extend(a..=b)`) — OOM/hang. | Value cap `MAX_CPU_ID = 8191` in both implementations. |
 | F4c | C parser | UB | `"18446744073709551616"`: strtol clamps to `LONG_MAX`, then `cpu++` in the emit loop signed-overflows (UB) before erroring via buffer exhaustion. | The 8191 cap rejects before any loop runs. |
-| F5 | Rust API | documented choice | C reports errors as `-1`; Rust collapses them to an empty `Vec`. Callers (`PcoreHasher`) treat empty as "fall back to all CPUs". | Documented; intentional API difference, not a divergence in detection results. |
+| F5 | Rust API | documented choice | C reports errors as `-1`; Rust collapses them to an empty `Vec`. Callers (`CoreHasher`) treat empty as "fall back to all CPUs". | Documented; intentional API difference, not a divergence in detection results. |
 | F6 | C/Windows | residual risk | The C Windows branch has never been compiled here (no mingw toolchain installed). | Rust crate is the go-forward implementation and its Windows path is typecheck-verified; C branch mirrors it line-for-line. See checklist below. |
 
 ## The shared cpulist grammar
