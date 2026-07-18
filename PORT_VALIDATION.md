@@ -75,7 +75,7 @@ all cases identical.
 | Parser: 28-case differential corpus | ✅ identical |
 | Detection invariants (P∩E=∅, hybrid⇔E≠∅) | ✅ in-crate test |
 | Windows module typecheck + clippy (`x86_64-pc-windows-gnu`) | ✅ clean |
-| Windows runtime, homogeneous machine | ⏳ CI `windows-latest` runner (runs on push) |
+| Windows runtime, homogeneous machine | ✅ CI `windows-latest` run #1: builds, tests pass, `--info` correctly reports 4-CPU homogeneous topology |
 | Windows runtime, **hybrid** machine | ⏳ needs the Windows VM — checklist below |
 | C Windows branch compile | ⏳ no mingw here; mirrors the verified Rust logic |
 
